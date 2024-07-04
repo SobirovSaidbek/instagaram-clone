@@ -1,14 +1,17 @@
+from django.contrib.auth import authenticate
 from django.core.validators import FileExtensionValidator
+from django.db.models import Q
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from shared.utils import send_code_to_email, send_code_to_phone
-from users.models import UserModel, VIA_EMAIL, VIA_PHONE, PHOTO
+from users.models import UserModel, VIA_EMAIL, VIA_PHONE, DONE, PHOTO
 
 
-class SingUpSerializer(serializers.ModelSerializer):
-    def __init__(self):
-        super(SingUpSerializer, self).__init__()
-        self.fields['email_or_phone_number'] =  serializers.CharField(max_length=256, read_only=False)
+class SignUpSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super(SignUpSerializer, self).__init__(*args, **kwargs)
+        self.fields['email_phone_number'] = serializers.CharField(max_length=128, required=False)
 
     uuid = serializers.IntegerField(read_only=True)
     auth_type = serializers.CharField(read_only=True, required=False)
@@ -18,10 +21,8 @@ class SingUpSerializer(serializers.ModelSerializer):
         model = UserModel
         fields = ['uuid', 'auth_type', 'auth_status']
 
-
     def validate(self, data):
         data = self.auth_validate(data=data)
-
         # auth_type = data['auth_type']
         # if auth_type == VIA_EMAIL:
         #     if UserModel.objects.filter(email=data['email']).exists():
@@ -29,16 +30,14 @@ class SingUpSerializer(serializers.ModelSerializer):
         # else:
         #     if UserModel.objects.filter(phone_number=data['phone_number']).exists():
         #         raise serializers.ValidationError("This phone number is already registered, use resend code api")
-
-
         return data
 
     def create(self, validated_data):
-        user = super(SingUpSerializer, self).create(validated_data)
-        code = user.create_verify_code(verify_type=user.verify_type)
-        if user.verify_type == VIA_EMAIL:
-            send_code_to_email(user.email, code)
+        user = super(SignUpSerializer, self).create(validated_data)
+        code = user.create_verify_code(user.auth_type)
 
+        if user.auth_type == VIA_EMAIL:
+            send_code_to_email(user.email, code)
         else:
             send_code_to_phone(phone_number=user.phone_number, code=code)
         user.save()
@@ -66,67 +65,46 @@ class SingUpSerializer(serializers.ModelSerializer):
         return data
 
     def to_representation(self, instance):
-        data = super(SingUpSerializer, self).to_representation(instance)
+        data = super(SignUpSerializer, self).to_representation(instance)
         data['access_token'] = instance.token()['access_token']
         return data
 
 
-class UpdateUserSerializer(serializers.ModelSerializer):
-    first_name = serializers.CharField(max_length=255)
-    last_name = serializers.CharField(max_length=255)
-    username = serializers.CharField(max_length=255)
-    password = serializers.CharField(max_length=128, write_only=True)
-    confirm_password = serializers.CharField(max_length=128, write_only=True)
+class UpdateUserSerializers(serializers.ModelSerializer):
+    first_name = serializers.CharField(write_only=True, required=True)
+    last_name = serializers.CharField(write_only=True, required=True)
+    username = serializers.CharField(write_only=True, required=True)
+    password = serializers.CharField(write_only=True, required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = UserModel
-        fields = ['first_name', 'last_name', 'username', 'password']
+        fields = ['first_name', 'last_name', 'username', 'password', 'confirm_password']
 
-    def validate(self, data):
-        password = data.get('password')
-        confirm_password = data.get('confirm_password')
+    def validate(self, attrs):
+        password = attrs.get('password')
+        confirm_password = attrs.get('confirm_password')
 
         if password != confirm_password:
             response = {
-                "success": False,
-                "message": "Passwords don't match"
+                'success': False,
+                'message': "Passwords don't match"
             }
-            raise serializers.ValidationError(response)
-        elif len(password) == 13 and len(confirm_password) == 13:
-            response = {
-                "success": False,
-                "message": "Password is too long"
-            }
+
             raise serializers.ValidationError(response)
 
-        elif str(password).strip() != str(confirm_password).strip():
-            response = {
-                "success": False,
-                "message": "Passwords don't match"
-            }
-
-        else:
-            return data
-
-        return data
+        return attrs
 
     def validate_username(self, username):
         if UserModel.objects.filter(username=username).exists():
             response = {
-                "success": False,
-                "message": "Username is already gotten"
+                'success': False,
+                'message': "Username already exists"
             }
-            raise serializers.ValidationError(response)
-        elif len(username) == 8 and username.isalpha():
-            response = {
-                "success": False,
-                "message": "Such a User cannot leave a name"
-            }
+
             raise serializers.ValidationError(response)
 
         return username
-
-
 
     def update(self, instance, validated_data):
         instance.username = validated_data.get('username', instance.username)
@@ -136,14 +114,85 @@ class UpdateUserSerializer(serializers.ModelSerializer):
 
         if validated_data.get('password'):
             instance.set_password(validated_data.get('password'))
+            instance.auth_status = DONE
             instance.save()
+
         return instance
 
 
-class UserAvatarSerializer(serializers.ModelSerializer):
-    photo = serializers.ImageField(validators=[FileExtensionValidator(allowed_extensions=['png', 'jpg', 'jpeg', 'gif'])])
+class UpdateAvatarSerializer(serializers.Serializer):
+    photo = serializers.ImageField(validators=[FileExtensionValidator(allowed_extensions=['png', 'jpg', 'jpeg'])])
 
     def update(self, instance, validated_data):
-        instance.avatar = validated_data.get('avatar', instance)
-        instance.auth_status = PHOTO
-        instance.save()
+        photo = validated_data.pop('photo')
+        if photo:
+            instance.avatar = photo
+            instance.auth_status = PHOTO
+            instance.save()
+
+        return instance
+
+
+class LoginSerializer(TokenObtainPairSerializer):
+    def __init__(self, *args, **kwargs):
+        super(LoginSerializer, self).__init__(*args, **kwargs)
+        self.fields['userinput'] = serializers.CharField(max_length=128, required=False)
+        self.fields['username'] = serializers.CharField(max_length=128, required=False)
+
+    def validate(self, attrs):
+        userinput = attrs.get('userinput')
+        if  userinput.endswith('@gmail.com'):
+            user = UserModel.objects.filter(email=userinput).first()
+
+        elif userinput.startswith('+'):
+            user = UserModel.objects.filter(phone_number=userinput).first()
+
+        else:
+            user = UserModel.objects.filter(username=userinput).first()
+
+        if user is None:
+            response = {
+                'success': False,
+                'message': "Invalid username or phone number"
+            }
+            raise serializers.ValidationError(response)
+
+        auth_user = authenticate(username=user.username, password=attrs.get('password'))
+        if auth_user is None:
+            response = {
+                'success': False,
+                'message': "Invalid username or password"
+            }
+            raise serializers.ValidationError(response)
+
+        response = {
+            'success': True,
+            'access_token': auth_user.token()['access_token'],
+            'refresh_token': auth_user.token()['refresh_token'],
+
+        }
+
+        return response
+
+
+class LogoutSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
+
+
+class ForgetPasswordSerializer(serializers.Serializer):
+    email_phone_number = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, attrs):
+        email_phone_number = attrs.get('email_phone_number')
+        response = {'success': False}
+        if not email_phone_number:
+            response['message'] = "Email phone number is required"
+            raise serializers.ValidationError(response)
+
+        user = UserModel.objects.filter(Q(email=email_phone_number) | Q(phone_number=email_phone_number)).first()
+        if not user.exists():
+            response['message'] = "User does not exist"
+            raise serializers.ValidationError(response)
+
+        attrs['user'] = user.first()
+        return attrs

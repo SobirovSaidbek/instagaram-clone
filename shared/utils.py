@@ -1,17 +1,18 @@
 import threading
 
-from django.core.mail import send_mail
-from instagram_settings.settings import EMAIL_HOST
-from twillo.rest import Client
+from django.core.mail import EmailMessage, send_mail
+from conf.settings import EMAIL_HOST
+from twilio.rest import Client
 from decouple import config
 
+
 def send_code_to_email(email, code):
-    def send_code_to_email():
+    def send_in_thread():
         send_mail(
             from_email=EMAIL_HOST,
             recipient_list=[email],
-            subject='Activation code',
-            message=f'Your activation code is {code}'
+            subject="Activation code",
+            message=f"Your activation code is {code}"
         )
 
     thread = threading.Thread(target=send_in_thread)
