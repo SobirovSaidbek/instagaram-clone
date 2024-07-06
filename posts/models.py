@@ -26,6 +26,7 @@ class PostLikeModel(BaseModel):
         return self.user.full_name
 
     class Meta:
+        ordering = ['created_at']
         db_table = 'post_likes'
         verbose_name = 'Post Like'
         verbose_name_plural = 'Posts Likes'
