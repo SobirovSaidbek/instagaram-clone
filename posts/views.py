@@ -17,6 +17,24 @@ class PostListView(generics.ListAPIView):
         return PostModel.objects.all()
 
 
+class UserPostListView(generics.ListAPIView):
+    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        return PostModel.objects.filter(user=self.request.user)
+
+
+"""class UserCommentListView(generics.ListAPIView):
+    serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        return CommentModel.objects.filter(user=self.request.user)"""
+
+
 class PostCreateAPIView(generics.CreateAPIView):
     serializer_class = PostSerializer
     permission_classes = [IsAuthenticated]
@@ -75,24 +93,22 @@ class PostCommentLikeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        comment_like = CommentLikeModel.objects.filter(comment_id=pk, user=self.request.user)
-        if comment_like.exists():
+        try:
+            comment_like = CommentLikeModel.objects.get(comment_id=pk)
             comment_like.delete()
-
             response = {
                 'status': True,
-                'message': 'Successfully unliked'
+                'message': 'Successfully unliked from comment'
             }
             return Response(response, status=status.HTTP_200_OK)
-
-        else:
+        except CommentLikeModel.DoesNotExist:
             CommentLikeModel.objects.create(comment_id=pk, user=self.request.user)
-
             response = {
                 'status': True,
-                'message': 'Successfully liked'
+                'message': 'Successfully Liked Comment'
             }
-            return Response(response, status=status.HTTP_200_OK)
+            return Response(request, status=status.HTTP_200_OK)
+
 
 
 class PostUpdateAPIView(APIView):
@@ -128,3 +144,11 @@ class PostUpdateAPIView(APIView):
             }
 
             return Response(response, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PostDeleteAPIView(APIView):
+    pass
+
+
+class CommentDeleteAPIView(APIView):
+    pass
