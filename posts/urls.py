@@ -7,6 +7,7 @@ app_name = 'posts'
 urlpatterns = [
     # Post Urls
     path('list/', PostListView.as_view(), name='post-list'),
+    path('list/liked/', UserLikedPostListView.as_view(), name='list-liked'),
     path('myself/', UserPostListView.as_view(), name='myself'),
     path('create/', PostCreateAPIView.as_view(), name='create'),
     path('<int:pk>/like/', PostLikeAPIView.as_view(), name='like'),
@@ -15,9 +16,10 @@ urlpatterns = [
 
 
     # Comment Urls
-    path('<int:pk>/comments/', PostCommentListView.as_view(), name='post-comments'),
+    path('<int:pk>/comments/', PostCommentListView.as_view(), name='comments-list'),
     path('<int:pk>/comments/create/', PostCommentCreateAPIView.as_view(), name='comments-create'),
     path('comment/<int:pk>/like/', PostCommentLikeAPIView.as_view(), name='comment-like'),
-    path('<int:pk>/delete/', CommentDeleteAPIView.as_view(), name='comment-delete'),
+    path('<int:pk>/comment/update/', CommentUpdateAPIView.as_view(), name='comment-update'),
+    path('<int:pk>/comment/delete/', CommentDeleteAPIView.as_view(), name='comment-delete'),
 
 ]
